@@ -32,7 +32,7 @@ def on_connect(client, userdata, flags, reasonCode, properties=None):
         print (f"Topics being sent now.{COLOUR_END}")
     else:
         print(f"{WARNING} MQTT Broker unable to connect on 1883 ({reasonCode}){COLOUR_END}")
-    sys.exit(1)
+        sys.exit(1)
 
 def on_message(client, userdata, msg):
     ts = time.strftime("%H:%M:%S")
@@ -43,12 +43,17 @@ def on_message(client, userdata, msg):
     topicSet.add(topic)
     msg.append((ts, topic, payload))
 
-    def on_disconnect(client, userdata, disconnect_flags, reasonCode, properties=None):
+def on_disconnect(client, userdata, disconnect_flags, reasonCode, properties=None):
         if reasonCode != 0:
             print(f"{WARNING}Unexpected disconnect ({reasonCode}){COLOUR_END}")
 
+            try:
+                client.connect(brokerHost, brokerPort, keepalive=60)
+            except Exception as e:
+                print(f"{ERROR}Connection failed: {e}{COLOUR_END}")
+
 def main():
-    parser = argparse.ArgumentParser(description="Anonymous MQTT client probe")
+    parser = argparse.ArgumentParser(description="Anonymous Mosquitto client (MQTT) probe")
     parser.add_argument("time", type=int, default=harvestSecs, help=f"{NOTIFICATION}Harvest duration in seconds: {harvestSecs}{COLOUR_END}")
     args = parser.parse_args()
 
@@ -58,7 +63,11 @@ def main():
     )
     client.on_connect = on_connect
     client.on_message = on_message
-    client.on_disconnect = on_disconnect # type: ignore
+    client.on_disconnect = on_disconnect 
 
     print(f"{NOTIFICATION}Loading connection to: {brokerHost}/{brokerPort}{COLOUR_END}")
-
+    try:
+        client.connect(brokerHost, brokerPort, keepalive=30)
+    except OSError as e:
+        print(f"{ERROR}Connection dropped, timeout increasing to 60 seconds.{e}{COLOUR_END}")
+        sys.exit(1)
