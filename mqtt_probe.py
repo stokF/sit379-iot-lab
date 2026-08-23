@@ -15,11 +15,16 @@ try:
 except ImportError:
     sys.exit("Error: paho-mqtt not installed. Run: sudo pip3 install paho-mqtt")
 
+class finalFile_Print:
+    harvestFile = "mqtt_harvest.txt"
+    topicMap_File = "mqtt_topic_map.txt"
+
+    def __str__(self):
+        return f"{self.harvestFile} and {self.topicMap_File}"
+
 brokerHost = "10.10.10.40"
 brokerPort = 1883 
 harvestSecs = 30
-harvestFile = "mqtt_harvest.txt"
-topicMap_File = "mqtt_topic_map.txt"
 actuatorTopic = "home/actuators/relay"
 clientID = "kali_probe_01"
 
@@ -83,19 +88,19 @@ def main():
     except KeyboardInterrupt:
         print(f"\n{WARNING}Harvest attempt forcefully terminated.")
 
-    with open(harvestFile, "w") as f:
+    with open(finalFile_Print.harvestFile, "w") as f:
         f.write(f"{NOTIFICATION}MQTT # Harvest completed - Duration: {args.time}s")
         f.write(f"{NOTIFICATION}# Broker: {brokerHost}/{brokerPort}")
         for ts, topic, payload in msg:
             f.write(f"{ts} {topic} {payload}\n")
-        print(f"{NOTIFICATION} Harvest data placed in {harvestFile}\n")
+        print(f"{NOTIFICATION} Harvest data placed in {finalFile_Print.harvestFile}\n")
         print(f"{NOTIFICATION} {msg} messages saved.")
 
-    with open(topicMap_File, "w") as f:
+    with open(finalFile_Print.topicMap_File, "w") as f:
         f.write("MQTT # Map completed")
         for t in sorted(topicSet):
             f.write(t + "\n")
-        print(f"{NOTIFICATION} Topic data placed im {topicMap_File}\n")
+        print(f"{NOTIFICATION} Topic data placed im {finalFile_Print.topicMap_File}\n")
         print(f"{NOTIFICATION} {len(topicSet)} topics discovered.")
 
         print(f"\n{NOTIFICATION} Unauthorized actuator change demonstration beginning on: '{actuatorTopic}'")
@@ -119,5 +124,7 @@ def main():
 
         print("\n" + "-" * 60)
         print(f"{NOTIFICATION}Probing complete.")
-        print(f"Refer to {harvestFile} + {topicMap_File} for relevant information")
-        print
+        print(f"Refer to {finalFile_Print()} for relevant information")
+
+if __name__ == "__main__":
+    main()
