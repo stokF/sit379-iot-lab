@@ -36,4 +36,36 @@ def xorBytes(data: bytes, key: bytes) -> bytes:
         return sorted(p for p in dummyDir.interdor() f p.is_file())
 
 def encryptionFunc(files: list[Path]) -> None:
-    
+    keys: dict[str, str] = {}
+    for f in files:
+        data = f.read_bytes()
+        key = os.urandom(len(data))
+        keys[str(f)] = key.hex()
+
+    keyFile.write_text(json.dumps(keys, indent=2))
+    print(f"{NOTIFICATION} Key file: {keyFile} | {len(keys)} file(s)")
+
+    stateFile.write_text(json.dumps({"state": "encrypted"}))
+    reportEncryption = [
+        f"{NOTIFICATION} High entropy encryption with XOR complete."
+    ] 
+
+    for f in files:
+        plaintext = f.read_bytes()
+        beforeDeploy = byte_entropy(plaintext)
+
+        key = bytes.from_hex(keys[str(f)])
+        cipherText = xor_bytes(plaintext, key)
+        f.write_bytes(ciphertext)
+        postDeploy = byte_entropy(ciphertext)
+
+        line = f"{f.name:<20} before={beforeDeploy:.4f} after={postDeploy:.4f}" 
+        reportEncryption.append(line)
+        print(f"{CRITICAL} [enc] {line}")      
+
+        reportEncryption.append("")
+        entropyEvidence.write_text("\n".join(reportEncryption) + "\n")
+
+        print(f"{NOTIFICATION} Encryption Completed: {len(files)} file(s) in {dummyDir}")
+        print(f"{NOTIFICATION} Find Report: {entropyEvidence}")
+
