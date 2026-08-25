@@ -1,4 +1,4 @@
-#Control Version 1.0
+#Control Version 1.1
 
 import argparse
 import re
@@ -32,6 +32,15 @@ severityLabel = {
     "INFO":     '\033[0m[INFO]\033[0m',
 }
 
+loopbackNet = "127.0.0.0/8"
+
+def offDevice(target_ip: str) -> str:
+    return f"ip.src != {target_ip} && !(ip.src == {loopbackNet})"
+
+def isLoopback(src: str) -> bool:
+    return src.startswith("127.")
+
+
 @dataclass
 class IoC:
     severity:  str
@@ -39,12 +48,9 @@ class IoC:
     relInfo:   str
     timeStamp: str = ""
 
-
 def _sev_key(ioc: "IoC") -> str:
-    """Strip ANSI codes from severity and return the bare label (e.g. 'CRITICAL')."""
     clean = re.sub(r'\033\[[0-9;]*m', '', ioc.severity).strip()
     return clean.split()[-1] if clean else "INFO"
-
 
 def tsharkField(pcap: Path, displayFilter: str, fields: list[str],
                 extraArgs: Optional[list[str]] = None) -> list[list[str]]:
@@ -54,6 +60,7 @@ def tsharkField(pcap: Path, displayFilter: str, fields: list[str],
         return []
 
     cmd = ["tshark", "-r", str(pcap), "-Y", displayFilter,
+           "-d", "tcp.port==1880,http",
            "-T", "fields", "-E", "separator=|"]
     for f in fields:
         cmd += ["-e", f]
@@ -75,7 +82,6 @@ def tsharkField(pcap: Path, displayFilter: str, fields: list[str],
             rows.append(line.split("|"))
     return rows
 
-
 def postFlows_Check(pcap: Path, target_ip: str) -> list[IoC]:
     iocs: list[IoC] = []
     rows = tsharkField(
@@ -92,7 +98,6 @@ def postFlows_Check(pcap: Path, target_ip: str) -> list[IoC]:
             timeStamp = ts,
         ))
     return iocs
-
 
 def getFlows_Check(pcap: Path, target_ip: str) -> list[IoC]:
     iocs: list[IoC] = []
@@ -111,7 +116,6 @@ def getFlows_Check(pcap: Path, target_ip: str) -> list[IoC]:
         ))
     return iocs
 
-
 def settingsCheck(pcap: Path, target_ip: str) -> list[IoC]:
     iocs: list[IoC] = []
     rows = tsharkField(
@@ -129,12 +133,11 @@ def settingsCheck(pcap: Path, target_ip: str) -> list[IoC]:
         ))
     return iocs
 
-
 def HTTP1880_Check(pcap: Path, target_ip: str) -> list[IoC]:
     iocs: list[IoC] = []
     rows = tsharkField(
         pcap,
-        f'tcp.port == 1880 && ip.src != {target_ip}',
+        f"tcp.port == 1880 && {offDevice(target_ip)}",
         ["frame.time", "ip.src", "tcp.dstport"]
     )
     if rows:
@@ -149,12 +152,11 @@ def HTTP1880_Check(pcap: Path, target_ip: str) -> list[IoC]:
         ))
     return iocs
 
-
 def mqttEth0_check(pcap: Path, target_ip: str) -> list[IoC]:
     iocs: list[IoC] = []
     rows = tsharkField(
         pcap,
-        f"mqtt && ip.src != {target_ip}",
+        f"mqtt && {offDevice(target_ip)}",
         ["frame.time", "ip.src", "mqtt.msgtype"]
     )
     if rows:
@@ -166,12 +168,11 @@ def mqttEth0_check(pcap: Path, target_ip: str) -> list[IoC]:
         ))
     return iocs
 
-
 def mqttConnect_Check(pcap: Path, target_ip: str) -> list[IoC]:
     iocs: list[IoC] = []
     rows = tsharkField(
         pcap,
-        f"mqtt.msgtype == 1 && ip.src != {target_ip}",
+        f"mqtt.msgtype == 1 && {offDevice(target_ip)}",
         ["frame.time", "ip.src", "mqtt.clientid"]
     )
     for row in rows:
@@ -182,8 +183,7 @@ def mqttConnect_Check(pcap: Path, target_ip: str) -> list[IoC]:
             relInfo   = f"Anonymous MQTT connection from {src} | clientid: {client_id}",
             timeStamp = ts,
         ))
-    return iocs  
-
+    return iocs
 
 def wildcardSub_check(pcap: Path, target_ip: str) -> list[IoC]:
     iocs: list[IoC] = []
@@ -194,7 +194,8 @@ def wildcardSub_check(pcap: Path, target_ip: str) -> list[IoC]:
     )
     for row in rows:
         ts, src, topic = (row + [""] * 3)[:3]
-        severity = "HIGH" if src != target_ip or topic == "#" else "INFO"
+        onDevice = src == target_ip or isLoopback(src)
+        severity = "HIGH" if not onDevice or topic == "#" else "INFO"
         iocs.append(IoC(
             severity  = f"{NOTIFICATION} {severity}",
             source    = pcap.name,
@@ -202,7 +203,6 @@ def wildcardSub_check(pcap: Path, target_ip: str) -> list[IoC]:
             timeStamp = ts,
         ))
     return iocs
-
 
 def mqttActuator_Check(pcap: Path, target_ip: str) -> list[IoC]:
     iocs: list[IoC] = []
@@ -213,20 +213,21 @@ def mqttActuator_Check(pcap: Path, target_ip: str) -> list[IoC]:
     )
     for row in rows:
         ts, src, topic, msg = (row + [""] * 4)[:4]
+        onDevice = src == target_ip or isLoopback(src)
+        severity = "INFO" if onDevice else "HIGH"
         iocs.append(IoC(
-            severity  = f"{NOTIFICATION} HIGH",
+            severity  = f"{NOTIFICATION} {severity}",
             source    = pcap.name,
             relInfo   = f"time={ts} src={src} topic={topic} payload={msg}",
             timeStamp = ts,
         ))
     return iocs
 
-
-def mqttBeacon_Check(pcap: Path, target_ip: str) -> list[IoC]:
+def mqttBeacon_Check(pcap: Path, attacker_ip: str) -> list[IoC]:
     iocs: list[IoC] = []
     rows = tsharkField(
         pcap,
-        f"mqtt.msgtype == 3 && ip.src == {target_ip if target_ip else '10.10.10.20'}",
+        f"mqtt.msgtype == 3 && ip.src == {attacker_ip if attacker_ip else '10.10.10.20'}",
         ["frame.time", "ip.src", "mqtt.topic"]
     )
     beacon_rows = [r for r in rows if 'actuators' not in (r[2] if len(r) > 2 else '')]
@@ -241,7 +242,6 @@ def mqttBeacon_Check(pcap: Path, target_ip: str) -> list[IoC]:
             timeStamp = beacon_rows[0][0] if beacon_rows else "",
         ))
     return iocs
-
 
 def auditdParse(auditd_file: Path) -> list[IoC]:
     iocs: list[IoC] = []
@@ -305,7 +305,6 @@ def auditdParse(auditd_file: Path) -> list[IoC]:
                 timeStamp = ts,
             ))
     return iocs
-
 
 def reportIoC(iocs: list[IoC], args: argparse.Namespace) -> str:
     lines = [
@@ -402,7 +401,6 @@ def main() -> None:
     if args.output:
         Path(args.output).write_text(report)
         print(f"\n{NOTIFICATION} Report created | Check: {args.output}")
-
 
 if __name__ == "__main__":
     main()
