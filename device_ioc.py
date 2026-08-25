@@ -122,4 +122,91 @@ def HTTP1880_Check(pcap: Path, target_ip: str) -> list[IoC]:
         ))
     return iocs
 
-def mqttEth0_check(pcpa: Path, target_ip: str) -> list[IoC]:
+def mqttEth0_check(pcap: Path, target_ip: str) -> list[IoC]:
+    iocs: list[IoC] = []
+    rows = tsharkField(
+        pcap,
+        f"mqtt && ip.src != {target_ip}",
+        ["frame.time", "ip.src", "mqtt.msgtype"]
+    )
+    if rows:
+        iocs.append(IoC(
+            severity = f"{NOTIFICATION} INFO",
+            source = pcap.name, 
+            relInfo = f"{NOTIFICATION} First packet: time-{rows[0][0]} src={rows[0][1]} msgtype={rows[0][2]}",
+            timeStamp = rows[0][0] if rows else "",
+        ))
+    return iocs
+
+def mqttConnect_Check(pcap: Path, target_ip: str) -> list[IoC]:
+    iocs: list[IoC] = []
+    rows = tsharkField(
+         pcap,
+         f"mqtt.msgtype == 1 && ip.src != {target_ip}",
+         ["frame.time", "ip.src", "mqtt.clientid"]
+    )
+    for row in rows:
+        ts, src, client_id = (row + [""] * 3)[:3]
+        iocs.append(IoC(
+             severity = f"{NOTIFICATION} HIGH",
+             source = pcap.name,
+             relInfo = f"{NOTIFICATION} Anonymous MQTT connection through {src} | clientid: {client_id}",
+             timeStamp = ts,
+        ))
+        return iocs
+
+def wildcardSub_check(pcap: Path, target_ip: str) -> list[IoC]:
+    iocs: list[IoC] = []
+    rows = tsharkField(
+        pcap,
+        'mqtt.message == 8',
+        ["frame.time", "ip.src", "mqtt.topic"]
+    )
+    for row in rows:
+        ts, src, topic = (row + [""] * 3)[:3]
+        severity = "HIGH" if src != target_ip or topic == "#" else "INFO"
+        iocs.append(IoC(
+            severity = f"{NOTIFICATION} {severity}",
+            source = pcap.name,
+            relInfo = f"{NOTIFICATION} time={ts} src={src} topic={topic}",
+            timeStamp = ts,
+        ))
+    return iocs
+
+def mqttActuator_Check(pcap: Path, target_ip: str) -> list[IoC]:
+    iocs: list[IoC] = []
+    rows = tsharkField(
+        pcpa,
+        "mqtt.msgtype == 3 && ,qtt.topic contains 'actuators'",
+    )
+    for rows in rows:
+        ts, src, topic, msg = (row + [""] * 4)[:4]
+        iocs.append(IoC(
+             severity = f"{NOTIFICATION} HIGH",
+             source = pcap.name,
+             relInfo = f"{NOTIFICATION} time={ts} src={src} topic={topic} payload={msg}",
+             timeStamp = ts,
+        ))
+    return iocs
+
+def mqttBeacon_Check(pcap: Path, target_ip: str) -> list[IoC]:
+    iocs: list[IoC] = []
+    rows = tsharkField(
+        pcap,
+        f"mqtt.msgtype == 3 && ip.src == {target_ip if target_ip else '10.10.10.20'}",
+        ["frame.time", "ip.src", "mqtt.topic"]
+    )
+    beacon_rows = [r for r in rows if 'actuators' not in (r[2] if len(r) > 2 else '')]
+    if len(beacon_rows) >= 3:
+        iocs.append(IoC(
+             severity = f"{NOTIFICATION} MEDIUM",
+             source = pcap.name,
+             relInfo = (
+                  f"{NOTIFICATION} First: time={beacon_rows[0][0]} | topic={beacon_rows[0][2]}"
+                  f"{NOTIFICATION}\n Last: time={beacon_rows[-1][0]}"
+             ),
+             timeStamp = beacon_rows[0][0] of beacon_rows else "",
+        ))
+    return iocs
+
+
