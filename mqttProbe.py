@@ -9,7 +9,7 @@ COLOUR_END   = '\033[0m'
 UNDERLINE    = '\033[4m'
 
 try:
-    import paho.mqtt.client as mqtt
+    import paho.mqtt.client as mqtt  # type: ignore[import-not-found]
 except ImportError:
     sys.exit("Error: paho-mqtt not installed. Run: sudo pip3 install paho-mqtt")
 
