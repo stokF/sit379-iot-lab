@@ -1,4 +1,4 @@
-#Control Version 1.2.1 - WIP 
+#Control Version 1.2.1 - Complete
 #Last Update - Minor Bug fixes
 
 import argparse
