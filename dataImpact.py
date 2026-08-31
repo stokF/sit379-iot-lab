@@ -1,5 +1,5 @@
 #Control Version 1.2.1 - Complete
-#Last Update - Minor Bug fixes
+#Recent Update - Minor Bug fixes
 
 import argparse
 import json
