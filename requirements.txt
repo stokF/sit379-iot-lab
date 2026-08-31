@@ -1,4 +1,4 @@
-﻿# SIT379 IoT Lab — Python dependencies
+# SIT379 IoT Lab — Python dependencies
 #
 # Windows (host):  pip install -r requirements.txt
 # Kali (VM):       pip install -r requirements.txt --break-system-packages
@@ -6,8 +6,9 @@
 # Script           Package        Used for
 # mqttProbe.py     paho-mqtt      MQTT client (CallbackAPIVersion.VERSION2 requires >= 2.0)
 # flowDeploy.py    requests       HTTP POST to Node-RED /flows API
-# dataImpact.py    (stdlib only)  argparse, json, math, os, pathlib, collections
+# dataImpact.py    cryptography   AES-256-GCM encryption (hazmat AESGCM)
 # deviceIOC.py     (stdlib only)  argparse, re, subprocess, dataclasses, pathlib
 
 paho-mqtt>=2.0
 requests>=2.28
+cryptography>=41.0
